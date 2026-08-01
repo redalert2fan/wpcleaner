@@ -748,7 +748,7 @@ public class InstallerWindow
     // Perform the installation
     boolean beta = chkBeta.isSelected();
     InstallerWorker worker = new InstallerWorker(
-        getWiki(), this, directory, credentials, beta);
+        getWiki(), this, directory, credentials, beta, desktop);
     worker.start();
   }
 
@@ -770,18 +770,26 @@ public class InstallerWindow
     /** Flag for selecting beta version */
     private final boolean beta;
 
+    /** Flag for creating a desktop shortcut */
+    private final boolean desktop;
+
     /**
      * @param wiki Wiki.
      * @param window Window.
+     * @param directory Installation directory.
+     * @param credentials Credentials to write.
+     * @param beta Whether to install the beta version.
+     * @param desktop Whether to create a desktop shortcut.
      */
     public InstallerWorker(
         EnumWikipedia wiki, BasicWindow window,
         File directory, Properties credentials,
-        boolean beta) {
+        boolean beta, boolean desktop) {
       super(wiki, window);
       this.directory = directory;
       this.credentials = credentials;
       this.beta = beta;
+      this.desktop = desktop;
       
     }
 
@@ -893,57 +901,59 @@ public class InstallerWindow
       }
 
       // Create a desktop shortcut
-      try {
-        File desktopFile = createDesktopFile();
+      if (desktop) {
+        try {
+          File desktopFile = createDesktopFile();
 
-        // Linux
-        if (SystemUtils.IS_OS_LINUX) {
+          // Linux
+          if (SystemUtils.IS_OS_LINUX) {
 
-          // Copy desktop file to normal location
-          log.info("Copying desktop file to normal location");
-          File normalDesktopFile = new File(
-              new File(SystemUtils.getUserDir(), ".local/share/applications"),
-              desktopFile.getName());
-          FileUtils.copyFile(desktopFile, normalDesktopFile);
-          log.info("Copied desktop file to normal location");
+            // Copy desktop file to normal location
+            log.info("Copying desktop file to normal location");
+            File normalDesktopFile = new File(
+                new File(SystemUtils.getUserDir(), ".local/share/applications"),
+                desktopFile.getName());
+            FileUtils.copyFile(desktopFile, normalDesktopFile);
+            log.info("Copied desktop file to normal location");
 
-          // Copy desktop file to old GNOME location
-          File applicationsFolder = new File(SystemUtils.getUserDir(), ".gnomev2/vfolders/applications");
-          if (applicationsFolder.exists() && applicationsFolder.isDirectory()) {
-            log.info("Copying desktop file to old GNOME location");
-            FileUtils.copyFile(desktopFile, new File(applicationsFolder, desktopFile.getName()));
-            log.info("Copyied desktop file to old GNOME location");
+            // Copy desktop file to old GNOME location
+            File applicationsFolder = new File(SystemUtils.getUserDir(), ".gnomev2/vfolders/applications");
+            if (applicationsFolder.exists() && applicationsFolder.isDirectory()) {
+              log.info("Copying desktop file to old GNOME location");
+              FileUtils.copyFile(desktopFile, new File(applicationsFolder, desktopFile.getName()));
+              log.info("Copyied desktop file to old GNOME location");
+            }
           }
+
+          // Windows
+          if (SystemUtils.IS_OS_WINDOWS) {
+            log.info("Creating shell link to WPCleaner.bat");
+            ShellLink sl = ShellLink.createLink(new File(directory, "WPCleaner.bat").getAbsolutePath())
+                .setWorkingDir(directory.getAbsolutePath())
+                .setIconLocation(new File(directory, "WPCleaner.ico").getAbsolutePath())
+                .setCMDArgs("-wiki " + getWikipedia().getSettings().getCode());
+            File desktopFolder = new File(SystemUtils.USER_HOME, "Desktop");
+            if (!desktopFolder.exists() || !desktopFolder.isDirectory()) {
+              desktopFolder = directory;
+            }
+            String shortcutName = beta ? "WPCleaner - Test" : "WPCleaner";
+            File shortcutFile = new File(desktopFolder, shortcutName + ".lnk");
+            if (shortcutFile.exists()) {
+              int counter = 1;
+              do {
+                shortcutFile = new File(desktopFolder, shortcutName + " (" + counter + ").lnk");
+                counter++;
+              } while (shortcutFile.exists());
+            }
+            sl.saveTo(shortcutFile.getAbsolutePath());
+            log.info("Created shell link to WPCleaner.bat");
+          }
+        } catch (IOException e) {
+          warningMessage =
+              GT._T("Problem creating desktop file") + "\n" +
+              GT._T("Error: {0}", e.getLocalizedMessage());
+          log.error("Error creating shortcut: {}", e.getMessage());
         }
-
-        // Windows
-        if (SystemUtils.IS_OS_WINDOWS) {
-          log.info("Creating shell link to WPCleaner.bat");
-          ShellLink sl = ShellLink.createLink(new File(directory, "WPCleaner.bat").getAbsolutePath())
-              .setWorkingDir(directory.getAbsolutePath())
-              .setIconLocation(new File(directory, "WPCleaner.ico").getAbsolutePath())
-              .setCMDArgs("-wiki " + getWikipedia().getSettings().getCode());
-          File desktopFolder = new File(SystemUtils.USER_HOME, "Desktop");
-          if (!desktopFolder.exists() || !desktopFolder.isDirectory()) {
-            desktopFolder = directory;
-          }
-          String shortcutName = beta ? "WPCleaner - Test" : "WPCleaner";
-          File shortcutFile = new File(desktopFolder, shortcutName + ".lnk");
-          if (shortcutFile.exists()) {
-            int counter = 1;
-            do {
-              shortcutFile = new File(desktopFolder, shortcutName + " (" + counter + ").lnk");
-              counter++;
-            } while (shortcutFile.exists());
-          }
-          sl.saveTo(shortcutFile.getAbsolutePath());
-          log.info("Created shell link to WPCleaner.bat");
-        }
-      } catch (IOException e) {
-        warningMessage =
-            GT._T("Problem creating desktop file") + "\n" +
-            GT._T("Error: {0}", e.getLocalizedMessage());
-        log.error("Error creating shortcut: {}", e.getMessage());
       }
 
       // Run WPCleaner
